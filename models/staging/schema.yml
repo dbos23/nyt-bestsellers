@@ -1,0 +1,74 @@
+version: 2
+
+sources:
+  - name: nyt_bestsellers
+    description: Two Snowflake tables containing New York Times bestseller data pulled from the NYT Books API
+    database: til_portfolio_projects
+    schema: dan_bostrom
+    freshness:
+      warn_after: { count: 1, period: day } # this dbt part runs the day after the API call. If the API call failed, this provides a warning
+      error_after: { count: 8, period: day } # if the API call fails a second consecutive time, this will throw an error
+    loaded_at_field: api_call_timestamp
+    tables:
+      - name: nyt_bestsellers_list
+        description: The raw bestsellers list. Each row represents one of the top 15 books for that week
+        columns:
+          - name: week_and_rank
+            description: A surrogate key for this table, made by concatenating the date with the rank
+            tests:
+              - unique
+              - not_null
+          - name: rank
+            description: The current week's rank for that book
+            tests:
+              - not_null
+          - name: results_bestsellers_date
+            description: A date field representing the week in question. It should always relate to the field of the same name in the metadata
+            tests:
+              - not_null
+              - relationships:
+                  to: source('nyt_bestsellers', 'nyt_bestsellers_metadata')
+                  field: results_bestsellers_date
+          - name: api_call_timestamp
+            description: The timestamp at which the data was collected from the API and loaded to Snowflake. Used to check for source freshness
+
+      - name: nyt_bestsellers_metadata
+        description: The raw metadata for the bestsellers. Each week has one row of data
+        columns:
+          - name: results_bestsellers_date
+            description: As in the list table, this is a date field representing the week in question
+            tests:
+              - unique
+              - not_null
+          - name: results_updated
+            description: The frequency with which the API updates this data. If it's not WEEKLY, then the scheduled jobs will need to be adjusted to not miss data
+            tests:
+              - accepted_values:
+                  values: ["WEEKLY"]
+          - name: status
+            description: The status of API call. Any issues that otherwise went unnoticed can be caught through this accepted values test
+            tests:
+              - accepted_values:
+                  values: ["OK"]
+          - name: num_results
+            description: The number of books in the list returned by the API for the given week
+            tests:
+              - accepted_values:
+                  values: [15]
+                  quote: false
+          - name: api_call_timestamp
+            description: The timestamp at which the data was collected from the API and loaded to Snowflake. Used to check for source freshness
+
+models:
+  - name: stg_nyt_bestsellers__list
+    description: A pared down version of the raw bestsellers list, involving only the needed fields with some renaming and minor cleaning
+    columns:
+      - name: results_bestsellers_date
+        description: A date field representing the week in question. It's used as the join key to join the list data with the metadata
+  - name: stg_nyt_bestsellers__metadata
+    description: A pared down version of the raw bestsellers metadata, with only the needed fields and a corrected data type for the date field
+    columns:
+      - name: results_bestsellers_date
+        description: The primary key, representing the week for that iteration of the list. Used as the join key to join with the list data
+      - name: results_display_name
+        description: The name of the bestseller list being queried

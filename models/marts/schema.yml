@@ -1,0 +1,3 @@
+models:
+  - name: nyt_bestsellers_marts
+    description: The finished model, created by joining the list data with the metadata. As it's intended to be used in downstream exposures, it materializes as a table to reduce querying time
